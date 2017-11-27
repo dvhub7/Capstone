@@ -3,8 +3,8 @@ Author: John-Paul
 CKME 136: Capstone Fall 2017
 Title: Sales_forecast
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
   
 ##  Step 1. LOADING THE DATA
@@ -260,11 +260,36 @@ test$Weekly_Sales<-predict(m1,newdata=test)
 ## 5. Time series Analysis Clustering
 ```{r echo=TRUE}
 
-#
 # The Code has been obtained from a Kaggle user
 #  https://rpubs.com/DharmeshP/CaseStudy1
 #
 #
+
+# Preparing Train, Test data.
+
+
+# Sbuseting to prepare Matrix from Train data which is from 2010-02 to 2011-12
+train1 <- subset(train, 
+                     train$Date > as.Date("2010-02-04",format= "%Y-%m-%d") 
+                    & train$Date < as.Date("2012-01-01",format= "%Y-%m-%d"))
+
+# Prepring Regression matrix for AMIMA
+regression_matrix   <- data.frame(as.factor(train1$IsHoliday), 
+                      train1$Temperature,
+                      as.numeric(train1$MarkDown1),as.numeric(train1$MarkDown2),
+                      as.numeric(train1$MarkDown3),as.numeric(train1$MarkDown4),
+                      as.numeric(train1$Fuel_Price),as.numeric(train1$Unemployment),
+                      as.numeric(train1$CPI))
+
+
+train_matrix <- data.matrix(regression_matrix)
+
+# Checking  TS data
+  tsDataSales<-ts(train1$Weekly_Sales,start=c(2010,5),frequency=52)
+
+plot(tsDataSales)
+
+plot(decompose(tsDataSales))
 
 # Preparing Train, Test data.
 
@@ -279,7 +304,7 @@ Acf(train_sales,lag.max=52,plot=TRUE)
 Pacf(train_sales,lag.max=52,plot=TRUE,main="Original Time Series")
 
 # ARIMA with order 1,1,1 gives the best residuals qqnorm plot.
-tst_arima <- arima(test_sales)
+tst_arima <- arima(train_sales)
 
 summary(tst_arima)
 
