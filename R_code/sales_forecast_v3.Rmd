@@ -5,6 +5,7 @@ Title: Sales_forecast
 output:
   html_document: default
   pdf_document: default
+  word_document: default
 ---
   
 ##  Step 1. LOADING THE DATA
@@ -25,6 +26,9 @@ library(forecast)
 library(tseries)
 library(dygraphs)
 library(fpp)
+library(pastecs)
+library(caret)
+library(corrplot)
 
 ## Contains data with the following information
 # Store Dept Date Weekly_Sales IsHoliday: 2010-02-05 ~ 2012-10-26
@@ -45,17 +49,14 @@ ft_df <- read_csv("features.csv")
 
 ```
 ## Step 2: DATA PREPARATION FOR ANALYSIS
-  Collecting and preparing the data for analysis are often the most involved and time consuming parts of building a         predictive model. While the collection was done for us, we still have to do a bit of work to prepare the data.
-  Merge the data frames "train", "Feature" and store" using the variable "store". 
+#  Collecting and preparing the data for analysis are often the most involved and time consuming parts of building a         predictive model. While the collection was done for us, we still have to do a bit of work to prepare the data.
+#  Merge the data frames "train", "Feature" and store" using the variable "store". 
 ```{r echo=TRUE}
 
 str(tr_df)
 str(ft_df)
 str(tst_df)
 str(str_df)
-head(tr_df)
-head(tst_df)
-
 
 # Analysis for train dataset and test dataset 
 # Converting the  Store, Dept and Type features to factor datatype
@@ -67,6 +68,12 @@ tr_df$Dept <- factor(tr_df$Dept)
 tst_df$Dept <- factor(tst_df$Dept)
 str_df$Type <- factor(str_df$Type)
 
+head(tr_df, n=3)
+head(tst_df, n=3)
+
+```
+# Now In this step of the process, we need to merge the datasets to build a successive model. We first review the column  # from Store.csv and join it with train.csv datasets. Then with the new dataset we do another join operation with #feature.csv dataset.
+```{r echo=TRUE}
 ## Merge train dataset with stores dataset by store and features dataset 
 # training dataset from the following dates: 2010-02-05 ~ 2012-10-26
 train1 <- full_join(tr_df, str_df, by= "Store")
@@ -85,6 +92,19 @@ test <- arrange(test, Store, Dept)
 
 rm(tr_df,tst_df,str_df,ft_df, test1, train1)
 
+head(train, n=5)
+head(test, n=5)
+
+
+
+```
+# Performing more Statistical analysis and looking for missing data
+```{r echo=TRUE}
+
+colSums(is.na(train))   # Number of missing per column/variable
+colSums(is.na(test))   # Number of missing per column/variable
+
+
 # Finding which column has NA values
 list.NA<-""
 for (i in c(1:ncol(train)))
@@ -95,74 +115,104 @@ for (i in c(1:ncol(train)))
   }
 }
 glimpse(list.NA)
-str(train)
+#str(train)
 
 # Number of missing values
 sum(is.na(train))
 
-levels(train$Type) # 3 retail store types: "A", "B", and "C"
-levels(train$Store)
-
 ## We can then use the complete.cases function to identify the rows without missing data:
+# In train dataset has 421,570 variables and 324,514 have missing values
+# Complete cases in train dataset are 97,056 and renamed to train_clean
+#  
 
-#train1 <- train[complete.cases(train),]
-#test1 <- test[complete.cases(test),]
+train_clean <- train[complete.cases(train),]
+test1 <- test[complete.cases(test),]
+#glimpse(train)
+#stat.desc(train_clean)
+#summary(train_clean)
+
+train[is.na(train)] <- 0
+
+glimpse(train)
+#glimpse(train_clean)
+#train1
+
+
+```
+
+```{r echo=TRUE}
+levels(train_clean$Type) # 3 retail store types: "A", "B", and "C"
+levels(train_clean$Store)
 
 hist(log(train$Weekly_Sales), breaks = 30)
 
 #Histograms of features
 par(mfrow=c(2, 3))
-hist(train$Temperature)
-hist(train$Fuel_Price)
-hist(train$CPI)
-hist(train$Unemployment)
-plot(table(train$IsHoliday))
+with(train_clean, hist(Temperature))
+with(train_clean, hist(Fuel_Price))
+with(train_clean, hist(CPI))
+with(train_clean, hist(Unemployment))
 
 # look at some plots
-boxplot(Weekly_Sales~Type, data = train, main = "Weekly sales and store types")
-boxplot(Weekly_Sales~Temperature>70, data = train, main = "Weekly sales vs temperature > 70 degrees")
+boxplot(Weekly_Sales~Type, data = train_clean, main = "Weekly sales and store types")
+boxplot(Weekly_Sales~Temperature>70, data = train_clean, main = "Weekly sales vs temperature > 70 degrees")
 
+
+
+```
+# Add week number label in the train dataset since we have weekly sales. Train dataset starts from week 5
+```{r echo=TRUE}
+## Add week number label in the train dataset since we have weekly sales. Train dataset starts from week 5
+train_clean$Week_Number <- as.numeric(format(train_clean$Date, "%U"))
+test$Week_Number <- as.numeric(format(test$Date, "%U"))
+glimpse(train_clean)
+
+```
+ # In order for our analysis to be consistent and avoid testing on our training data, we are going to split it into a
+ # training and test data set using the caret package
+ # The training data set has 77,648
+ # The testing data set has 19,408
+```{r echo=TRUE}
+#Subset our data into train and test
+index <- createDataPartition(train_clean$Weekly_Sales,list = FALSE,p=0.8)
+training <-train_clean[index,]
+testing <- train_clean[-index,]
+
+nrow(training)
+nrow(testing)
 
 
 ```
 
 ## STEP 3: EXploratory Data Analysis 
-### Perform analysis on training and test data set
+### Perform analysis on training and testing data set
 ```{r echo=TRUE}
-summary(train)
-glimpse(train)
 
-summary(test)
-glimpse(test)
 
-## More analysis on the train dataset 
+## More analysis on the training dataset 
 
-with(train,table(Dept,Store))   # 45 stores with 99 departments and 143 weeks
-with(train,table(Store,Type))  # Determine the type a particular store (3 types)
-with(train,table(Dept,Type))   # Determine the type a particular department (3 types)
+with(training,table(Dept,Store))   # 45 stores with 99 departments and result is the number of weeks
+with(training,table(Store,Type))  # Determine the type a particular store (3 types)
+with(training,table(Dept,Type))   # Determine the type a particular department (3 types)
 
 ## Perform the same analysis on the test dataset 
 with(test,table(Dept,Store))   # 45 stores with 99 departments and 39 weeks
 
-## Add week number label in the train dataset since we have weekly sales. Train dataset starts from week 5
-train$Week_Number <- as.numeric(format(train$Date, "%U"))
-test$Week_Number <- as.numeric(format(test$Date, "%U"))
-
 # comparing all departments within each Store which are in 3 types
-ggplot(data=train) + 
+ggplot(data=training) + 
   geom_bar(mapping=aes(x=Store,colour=Dept))
-ggplot(data=train) +
+ggplot(data=training) +
   geom_bar(mapping=aes(x=Store,fill=Dept))+facet_grid(Type ~ .)
 
 # Visualizing a graph that will compare different departments within a selected store
-dept_graph <- filter(train, Store==1 & Dept %in% c(1,2,3,4,5,6,7,8,9,10))
+dept_graph <- filter(training, Store==1 & Dept %in% c(1,2,3,4,5,6,7,8,9,10))
 ggplot(data=dept_graph) +
   geom_line(mapping=aes(x=Date, y=Weekly_Sales, color=factor(Dept))) + 
   xlab('Date') + ylab('Weekly Sales ($)') + ggtitle('Store 1 Sales bases on multiple departments') +
   scale_colour_discrete(name='Departments')
 
 # Visualizing a graph that will compare same department across different stores
-Store_graph <- filter(train, Store %in% c(1,2,3,4,5,6,7,8,9,10) & Dept==1)
+Store_graph <- filter(training, Store %in% c(1,2,3,4,5,6,7,8,9,10) & Dept==1)
 ggplot(data=Store_graph) +
   geom_line(mapping=aes(x=Date, y=Weekly_Sales, color=factor(Store))) + 
   xlab('Date') + ylab('Weekly Sales ($)') + ggtitle('Department 1 Sales across multiple Stores') +
@@ -170,8 +220,8 @@ scale_colour_discrete(name='Stores')
 
 
 #  Calculating the sum Total sales across all 45 stores
-Sales_Total<-aggregate(train$Weekly_Sales,
-                       by=list(Store=train$Store,Type=train$Type,Size=train$Size, Weekly=train$Week_Number),FUN=sum)
+Sales_Total<-aggregate(training$Weekly_Sales,
+                       by=list(Store=training$Store,Type=training$Type,Size=training$Size, Weekly=training$Week_Number),FUN=sum)
 
 sales1<-labs(title="Retail Sales by Stores",y="Sales $")
 sales2<-labs(title="Retail Sales by Stores",y="Week number")
@@ -182,14 +232,14 @@ ggplot(data=Sales_Total,aes(x=Weekly,y=I(x/Size),fill=Type))+geom_bar(stat="iden
 
 # Analysis of the Weekly_Sales trends
 # 3 types of stores (aggregate over 45 stores and 99 departments in each store)
-All_Sales<-aggregate(train$Weekly_Sales,
-                     by=list(Date=train$Date,Type=train$Type),FUN=sum)
+All_Sales<-aggregate(training$Weekly_Sales,
+                     by=list(Date=training$Date,Type=training$Type),FUN=sum)
 # Aggregate the Stores, type and date
-Store_Sales<-aggregate(train$Weekly_Sales,
-                       by=list(Store=train$Store,Date=train$Date,Type=train$Type),FUN=sum)
+Store_Sales<-aggregate(training$Weekly_Sales,
+                       by=list(Store=training$Store,Date=training$Date,Type=training$Type),FUN=sum)
 # all departments (aggregate over 45 stores)
-Dept_Sales<-aggregate(train$Weekly_Sales,
-                      by=list(Dept=train$Dept,Date=train$Date,Type=train$Type),FUN=sum)                       
+Dept_Sales<-aggregate(training$Weekly_Sales,
+                      by=list(Dept=training$Dept,Date=training$Date,Type=training$Type),FUN=sum)                       
 
 graph0<-labs(title="Store Sales Trend",x="Date",y="Weekly Sales")
 graph1<-ggplot(data=All_Sales) + 
@@ -203,27 +253,26 @@ graph3<- ggplot(data=Dept_Sales) +
   (mapping=aes(x=Date,y=x)) + geom_line(aes(col=Dept))
 graph3+graph0
 
-head(train)
-tail(train)
-
-fit <- lm(Weekly_Sales ~ as.factor(Type) + Size + CPI + Fuel_Price + IsHoliday + Temperature-1,data=train)
-summary(fit)
+head(training)
+tail(training)
 
 
 ```
-
 ## 4. MODELLING: 
-##    The model requires me to predict the weekly sales for each store
+##  Ordinary Least Square Linear regression modelling  
+# The model requires me to predict the weekly sales for each store
 ```{r echo=TRUE}
+fit <- lm(Weekly_Sales ~ Date + as.factor(Type) + Size + CPI + Fuel_Price + IsHoliday + Temperature-1,data=train)
+fitconf_predict <- predict(fit, newdata=test, interval="confidence", level=0.95)
 
-### OLS Code has been sampled from online source 
-summary(test)
-# MarkDown from 1 to 5 turning all NA to 0
-train$MarkDown1[is.na(train$MarkDown1)]<-0
-train$MarkDown2[is.na(train$MarkDown2)]<-0
-train$MarkDown3[is.na(train$MarkDown3)]<-0
-train$MarkDown4[is.na(train$MarkDown4)]<-0
-train$MarkDown5[is.na(train$MarkDown5)]<-0
+
+fit_predict <-predict(fit, newdata=test, interval="prediction", level=0.95)
+
+predict_unc <- cbind(test,fitconf_predict,fit_predict[,-1])
+test <- cbind(test,fitconf_predict)
+results <- ifelse(test$Weekly_Sales >= test$lwr & test$Weekly_Sales <= test$upr,TRUE,FALSE)
+#test <- cbind(test,results)
+sum(results)/nrow(test)
 
 # separate data by the store types, 
 train_A<-subset(train,Type=="A")
@@ -260,62 +309,54 @@ test$Weekly_Sales<-predict(m1,newdata=test)
 ## 5. Time series Analysis Clustering
 ```{r echo=TRUE}
 
-# The Code has been obtained from a Kaggle user
+# Some Code has been sampled from a Kaggle user
 #  https://rpubs.com/DharmeshP/CaseStudy1
 #
 #
-
 # Preparing Train, Test data.
+# Preparing a time series for the train dataset
+head(train, n=3)
 
+train_s <- count(training, c("Date"))
+train_sales_ts <- ts(training$Weekly_Sales, start = c(2010,5),
+               end = c(2012,52), frequency = 52)
 
-# Sbuseting to prepare Matrix from Train data which is from 2010-02 to 2011-12
-train1 <- subset(train, 
-                     train$Date > as.Date("2010-02-04",format= "%Y-%m-%d") 
-                    & train$Date < as.Date("2012-01-01",format= "%Y-%m-%d"))
+# The following plot shows our time series
+plot(train_sales_ts)
 
-# Prepring Regression matrix for AMIMA
-regression_matrix   <- data.frame(as.factor(train1$IsHoliday), 
-                      train1$Temperature,
-                      as.numeric(train1$MarkDown1),as.numeric(train1$MarkDown2),
-                      as.numeric(train1$MarkDown3),as.numeric(train1$MarkDown4),
-                      as.numeric(train1$Fuel_Price),as.numeric(train1$Unemployment),
-                      as.numeric(train1$CPI))
+# Analyzing the train dataset using the ARIMA model
+d <- 0 : 2
+p <- 0 : 6
+q <- 0 : 6
 
+train_models <- expand.grid(d = d, p = p, q = q)
+head(train_models, n = 4)
 
-train_matrix <- data.matrix(regression_matrix)
+# define ARIMA function that fits a model
+getTSModelAIC <- function(ts_data, p, d, q) {
+ts_model <- arima(ts_data, order = c(p, d, q))
+return(ts_model$aic)
+}
 
-# Checking  TS data
-  tsDataSales<-ts(train1$Weekly_Sales,start=c(2010,5),frequency=52)
+getTSModelAICSafe <- function(ts_data, p, d, q) {
+result = tryCatch({
+  getTSModelAIC(ts_data, p, d, q)
+}, error = function(e) {
+Inf
+})
+}
 
-plot(tsDataSales)
+train_models$aic <- mapply(function(x, y, z)
+getTSModelAICSafe(train_sales_ts, x, y, z), train_models$p,
+train_models$d, train_models$q)
+subset(train_models,aic == min(aic))
 
-plot(decompose(tsDataSales))
+# The results indicate that the most appropriate model for our Weekly sales
+# time series is the ARIMA(2, 1, 3) model. We can train this model again with these parameters:
+train_model <- arima(train_sales_ts, order = c(2, 1, 3))
+summary(train_model)
 
-# Preparing Train, Test data.
-
-train_sales<-window(tsDataSales,start=c(2010,5),end=c(2011,52),frequency = 52)
-
-test_sales<-window(tsDataSales,start=2012,frequency = 52)
-
-
-#Checking for order
-Acf(train_sales,lag.max=52,plot=TRUE)
-
-Pacf(train_sales,lag.max=52,plot=TRUE,main="Original Time Series")
-
-# ARIMA with order 1,1,1 gives the best residuals qqnorm plot.
-tst_arima <- arima(train_sales)
-
-summary(tst_arima)
-
-#Reshape the train data into a matrix containing the weekly sales for each store
-#This is preparation required for time series clustering
-#Input: Train dataset which contain multiple rows x 4 column variables
-#Output: Matrix of 143 weekly sales observations x 45 stores
-
-store.matrix <- dcast(train,formula=Date~Store,value.var = "Weekly_Sales",fun.aggregate = sum)
-store.matrix <- tbl_df(store.matrix)
-glimpse(store.matrix)
-
+#Plot and forecast the next future points
+plot(forecast(train_model))
 
 ```
